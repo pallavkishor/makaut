@@ -1,0 +1,153 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+
+  /*
+   * Visible focus for anything that does not set its own ring.
+   * primary-600 (#425D85) measures 6.45:1 on the page background and 5.84:1 on
+   * tertiary cards, both well clear of the 3:1 non-text minimum.
+   */
+  :focus-visible {
+    @apply outline-none ring-2 ring-primary-600 ring-offset-2 ring-offset-background;
+  }
+
+  /* Respect users who ask for less motion */
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer components {
+  /*
+   * Reading styles for note content.
+   *
+   * Tuned for long-form study: generous line height, a comfortable measure, and
+   * clear heading rhythm. Written as flat selectors because the note HTML comes
+   * from the API and cannot carry utility classes.
+   */
+  .note-content {
+    @apply text-[1.0625rem] leading-[1.75] text-foreground;
+  }
+
+  .note-content > * + * {
+    @apply mt-5;
+  }
+
+  .note-content h1 {
+    @apply mt-10 text-2xl font-bold tracking-tight text-foreground sm:text-3xl;
+  }
+
+  .note-content h2 {
+    @apply mt-10 text-xl font-bold tracking-tight text-foreground sm:text-2xl;
+  }
+
+  .note-content h3 {
+    @apply mt-8 text-lg font-semibold text-foreground sm:text-xl;
+  }
+
+  .note-content h4,
+  .note-content h5,
+  .note-content h6 {
+    @apply mt-6 text-base font-semibold text-foreground;
+  }
+
+  .note-content h1:first-child,
+  .note-content h2:first-child,
+  .note-content h3:first-child {
+    @apply mt-0;
+  }
+
+  .note-content p {
+    @apply text-foreground;
+  }
+
+  .note-content strong,
+  .note-content b {
+    @apply font-semibold text-foreground;
+  }
+
+  .note-content em,
+  .note-content i {
+    @apply italic;
+  }
+
+  .note-content u {
+    @apply underline decoration-muted-300 underline-offset-2;
+  }
+
+  .note-content a {
+    @apply font-medium text-primary-700 underline decoration-primary-300 underline-offset-2 hover:decoration-primary-600;
+  }
+
+  .note-content ul {
+    @apply list-disc space-y-2 pl-6;
+  }
+
+  .note-content ol {
+    @apply list-decimal space-y-2 pl-6;
+  }
+
+  .note-content li > ul,
+  .note-content li > ol {
+    @apply mt-2;
+  }
+
+  .note-content blockquote {
+    @apply border-l-4 border-primary-200 bg-primary-50/50 py-2 pl-5 pr-4 italic text-foreground;
+  }
+
+  .note-content code {
+    @apply rounded bg-tertiary-200 px-1.5 py-0.5 font-mono text-[0.9em] text-foreground;
+  }
+
+  .note-content pre {
+    @apply overflow-x-auto rounded-lg bg-background-inverse p-4 text-sm leading-relaxed text-foreground-inverse;
+  }
+
+  .note-content pre code {
+    @apply bg-transparent p-0 text-inherit;
+  }
+
+  /* Images scale down on small screens and never overflow the column */
+  .note-content img {
+    @apply mx-auto h-auto max-w-full rounded-lg border border-border shadow-sm;
+  }
+
+  .note-content table {
+    @apply w-full border-collapse text-left text-sm;
+  }
+
+  .note-content th,
+  .note-content td {
+    @apply border border-border px-3 py-2 align-top;
+  }
+
+  .note-content th {
+    @apply bg-tertiary font-semibold text-foreground;
+  }
+
+  /* Tables are the one element that may need horizontal scroll on mobile */
+  .note-content > table {
+    @apply block overflow-x-auto;
+  }
+}

@@ -1,0 +1,104 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /*
+   * Visible focus for anything that does not set its own ring. primary-600
+   * (#425D85) measures 6.45:1 on the page background (#FAFBF8) and 5.84:1 on
+   * tertiary surfaces (#F3EFE7), both clear of the 3:1 non-text minimum.
+   */
+  :focus-visible {
+    @apply outline-none ring-2 ring-primary-600 ring-offset-2 ring-offset-background;
+  }
+
+  /* Components that opt into an outline-based ring manage their own offset. */
+  [class*='focus-visible:outline']:focus-visible {
+    @apply ring-0 ring-offset-0;
+  }
+}
+
+/* Rendering of note content produced by the TipTap editor. */
+.note-content {
+  @apply text-sm leading-relaxed text-foreground;
+}
+
+.note-content h1 {
+  @apply mb-2 mt-4 text-xl font-bold text-foreground;
+}
+
+.note-content h2 {
+  @apply mb-2 mt-4 text-lg font-bold text-foreground;
+}
+
+.note-content h3 {
+  @apply mb-1.5 mt-3 text-base font-semibold text-foreground;
+}
+
+.note-content p {
+  @apply my-2;
+}
+
+.note-content ul {
+  @apply my-2 list-disc pl-6;
+}
+
+.note-content ol {
+  @apply my-2 list-decimal pl-6;
+}
+
+.note-content blockquote {
+  @apply my-3 border-l-4 border-primary-200 pl-3 italic text-muted;
+}
+
+.note-content a {
+  @apply text-primary-700 underline;
+}
+
+.note-content img {
+  @apply my-3 max-w-full rounded;
+}
+
+.note-content pre {
+  @apply my-3 overflow-x-auto rounded bg-background-inverse p-3 text-xs text-foreground-inverse;
+}
+
+.note-content code {
+  @apply rounded bg-tertiary-200 px-1 py-0.5 text-xs text-primary-900;
+}
+
+.note-content pre code {
+  @apply bg-transparent p-0 text-foreground-inverse;
+}
+
+.note-content table {
+  @apply my-3 w-full table-fixed border-collapse;
+}
+
+.note-content th,
+.note-content td {
+  @apply border border-border-strong px-2 py-1 text-left align-top;
+}
+
+.note-content th {
+  @apply bg-tertiary-200 font-semibold;
+}
+
+.note-content hr {
+  @apply my-4 border-border;
+}
+
+/* TipTap editing surface. */
+.ProseMirror {
+  @apply min-h-[20rem] outline-none;
+}
+
+.ProseMirror .selectedCell::after {
+  @apply pointer-events-none absolute inset-0 bg-primary-200/40;
+  content: '';
+}
+
+.ProseMirror td,
+.ProseMirror th {
+  @apply relative;
+}

@@ -1,0 +1,111 @@
+# Local development / evaluation stack for the Educational Notes Platform.
+#
+#   docker compose up --build
+#
+#   Student platform  -> http://localhost:3000
+#   Backend API       -> http://localhost:3001  (health: /health)
+#   Admin panel       -> http://localhost:3002
+#   PostgreSQL 15     -> localhost:5432
+#
+# Values below fall back to development defaults so the stack boots with no
+# extra setup. They are NOT suitable for production - create a root `.env`
+# file (compose reads it automatically) and override every secret there, or
+# supply the variables from your deployment platform. See DEPLOYMENT.md.
+
+name: educational-notes-platform
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-educational_notes}
+    ports:
+      - '${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-educational_notes}']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  backend:
+    build:
+      context: .
+      dockerfile: packages/backend/Dockerfile
+    restart: unless-stopped
+    # Apply pending migrations before serving traffic, then start the API.
+    command:
+      - sh
+      - -c
+      - 'npx prisma migrate deploy --schema prisma/schema.prisma && node dist/index.js'
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 3001
+      # fatal|error|warn|info|debug|trace|silent. Unset falls back to the
+      # per-environment default (debug in development, info in production).
+      LOG_LEVEL: ${LOG_LEVEL:-}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-educational_notes}?schema=public
+      # Development fallback only - always override JWT_SECRET outside local dev.
+      JWT_SECRET: ${JWT_SECRET:-dev-only-insecure-secret-change-me}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000,http://localhost:3002}
+      RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS:-900000}
+      RATE_LIMIT_MAX_REQUESTS: ${RATE_LIMIT_MAX_REQUESTS:-5}
+      UPLOAD_DIR: ${UPLOAD_DIR:-./uploads}
+      MAX_FILE_SIZE: ${MAX_FILE_SIZE:-5242880}
+      SESSION_TIMEOUT_STUDENT: ${SESSION_TIMEOUT_STUDENT:-86400000}
+      SESSION_TIMEOUT_ADMIN: ${SESSION_TIMEOUT_ADMIN:-1800000}
+      # Consumed only by `npm run db:seed` (see DEPLOYMENT.md). The seed script
+      # refuses to run when SEED_ADMIN_PASSWORD is empty.
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
+    ports:
+      - '3001:3001'
+    volumes:
+      - backend-uploads:/app/packages/backend/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  student-frontend:
+    build:
+      context: .
+      dockerfile: packages/student-frontend/Dockerfile
+      args:
+        # Baked into the client bundle at build time by Next.js. This is the
+        # URL reached from the user's browser, not from inside the network.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+    ports:
+      - '3000:3000'
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  admin-frontend:
+    build:
+      context: .
+      dockerfile: packages/admin-frontend/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3002
+    ports:
+      - '3002:3002'
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  backend-uploads:

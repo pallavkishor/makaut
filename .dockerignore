@@ -1,0 +1,43 @@
+# Keep host-built artifacts out of the Docker build context. Copying a
+# host node_modules into a Linux image would break native modules (bcrypt)
+# and the generated Prisma client.
+node_modules
+**/node_modules
+
+# Build output
+dist
+**/dist
+.next
+**/.next
+out
+**/out
+coverage
+**/coverage
+
+# Secrets / local environment files - values are injected via compose or the
+# deployment platform instead.
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# VCS, tooling and editor state
+.git
+.gitignore
+.kiro
+.vscode
+.idea
+
+# Logs and scratch files
+*.log
+npm-debug.log*
+*.tmp
+.cache
+
+# Docker files themselves
+Dockerfile
+**/Dockerfile
+docker-compose.yml
+.dockerignore

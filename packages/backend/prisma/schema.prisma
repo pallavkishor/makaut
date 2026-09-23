@@ -1,0 +1,434 @@
+// This is your Prisma schema file
+// Learn more about it in the docs: https://pris.ly/d/prisma-schema
+//
+// Naming convention: models are PascalCase in Prisma and snake_case in the
+// database (@@map / @map on every model and column).
+//
+// Academic hierarchy (all admin-managed, nothing hardcoded):
+//   University > Program > Stream > Semester > Subject > Chapter > Note
+//
+// Commerce is account-level: a student holds a Subscription to a
+// SubscriptionPlan, not to an individual subject.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum ResourceType {
+  REFERENCE
+  PREVIOUS_YEAR_PAPER
+  QUESTION_PAPER
+  SYLLABUS
+  OTHER
+
+  @@map("resource_type")
+}
+
+enum BillingInterval {
+  MONTHLY
+  YEARLY
+
+  @@map("billing_interval")
+}
+
+enum SubscriptionStatus {
+  PENDING
+  ACTIVE
+  EXPIRED
+  CANCELLED
+  FAILED
+
+  @@map("subscription_status")
+}
+
+enum PaymentStatus {
+  CREATED
+  AUTHORIZED
+  CAPTURED
+  FAILED
+  REFUNDED
+
+  @@map("payment_status")
+}
+
+// ---------------------------------------------------------------------------
+// Accounts
+// ---------------------------------------------------------------------------
+
+// Students table
+model Student {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique @db.VarChar(255)
+  passwordHash String   @map("password_hash") @db.VarChar(255)
+  registeredAt DateTime @default(now()) @map("registered_at") @db.Timestamp()
+
+  // Dashboard preferences: the hierarchy the student is currently studying.
+  // ON DELETE SET NULL so removing an academic node never deletes an account.
+  selectedUniversityId String? @map("selected_university_id") @db.Uuid
+  selectedProgramId    String? @map("selected_program_id") @db.Uuid
+  selectedStreamId     String? @map("selected_stream_id") @db.Uuid
+  selectedSemesterId   String? @map("selected_semester_id") @db.Uuid
+
+  // Relations
+  registeredDevices RegisteredDevice[]
+  subscriptions     Subscription[]
+  payments          Payment[]
+  bookmarks         Bookmark[]
+  readingProgress   ReadingProgress[]
+
+  selectedUniversity University? @relation("StudentSelectedUniversity", fields: [selectedUniversityId], references: [id], onDelete: SetNull)
+  selectedProgram    Program?    @relation("StudentSelectedProgram", fields: [selectedProgramId], references: [id], onDelete: SetNull)
+  selectedStream     Stream?     @relation("StudentSelectedStream", fields: [selectedStreamId], references: [id], onDelete: SetNull)
+  selectedSemester   Semester?   @relation("StudentSelectedSemester", fields: [selectedSemesterId], references: [id], onDelete: SetNull)
+
+  @@index([selectedUniversityId], map: "idx_students_selected_university")
+  @@index([selectedProgramId], map: "idx_students_selected_program")
+  @@index([selectedStreamId], map: "idx_students_selected_stream")
+  @@index([selectedSemesterId], map: "idx_students_selected_semester")
+  @@map("students")
+}
+
+// Administrators table
+model Administrator {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique @db.VarChar(255)
+  passwordHash String   @map("password_hash") @db.VarChar(255)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamp()
+
+  @@map("administrators")
+}
+
+// Registered devices table
+model RegisteredDevice {
+  id             String   @id @default(uuid()) @db.Uuid
+  studentId      String   @map("student_id") @db.Uuid
+  fingerprint    String   @db.VarChar(512)
+  registeredAt   DateTime @default(now()) @map("registered_at") @db.Timestamp()
+  lastAccessedAt DateTime @default(now()) @map("last_accessed_at") @db.Timestamp()
+
+  // Relations
+  student  Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  sessions Session[]
+
+  @@unique([studentId, fingerprint])
+  @@index([studentId], map: "idx_devices_student")
+  @@map("registered_devices")
+}
+
+// Sessions table
+// Note: This uses a polymorphic pattern where userId can reference either Student or Administrator
+// based on userType. Prisma doesn't natively support polymorphic relations, so we use optional relations
+// and handle the logic at the application layer.
+model Session {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  userType  String   @map("user_type") @db.VarChar(20)
+  token     String   @unique @db.VarChar(512)
+  deviceId  String?  @map("device_id") @db.Uuid
+  expiresAt DateTime @map("expires_at") @db.Timestamp()
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp()
+
+  // Relations
+  device RegisteredDevice? @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([token], map: "idx_sessions_token")
+  @@index([userId, userType], map: "idx_sessions_user")
+  @@map("sessions")
+}
+
+// ---------------------------------------------------------------------------
+// Academic hierarchy
+// ---------------------------------------------------------------------------
+
+// Universities table - top of the academic hierarchy
+model University {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @db.VarChar(255)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp()
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamp()
+
+  // Relations
+  programs         Program[]
+  studentsSelected Student[] @relation("StudentSelectedUniversity")
+
+  @@map("universities")
+}
+
+// Programs table - e.g. B.Tech, MBA
+model Program {
+  id           String   @id @default(uuid()) @db.Uuid
+  universityId String   @map("university_id") @db.Uuid
+  name         String   @db.VarChar(255)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamp()
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamp()
+
+  // Relations
+  university       University @relation(fields: [universityId], references: [id], onDelete: Cascade)
+  streams          Stream[]
+  studentsSelected Student[]  @relation("StudentSelectedProgram")
+
+  @@index([universityId], map: "idx_programs_university")
+  @@map("programs")
+}
+
+// Streams table - e.g. Computer Science, Mechanical
+model Stream {
+  id        String   @id @default(uuid()) @db.Uuid
+  programId String   @map("program_id") @db.Uuid
+  name      String   @db.VarChar(255)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp()
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamp()
+
+  // Relations
+  program          Program    @relation(fields: [programId], references: [id], onDelete: Cascade)
+  semesters        Semester[]
+  studentsSelected Student[]  @relation("StudentSelectedStream")
+
+  @@index([programId], map: "idx_streams_program")
+  @@map("streams")
+}
+
+// Semesters table
+model Semester {
+  id        String   @id @default(uuid()) @db.Uuid
+  streamId  String   @map("stream_id") @db.Uuid
+  number    Int
+  name      String?  @db.VarChar(255)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp()
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamp()
+
+  // Relations
+  stream           Stream    @relation(fields: [streamId], references: [id], onDelete: Cascade)
+  subjects         Subject[]
+  studentsSelected Student[] @relation("StudentSelectedSemester")
+
+  @@index([streamId], map: "idx_semesters_stream")
+  @@map("semesters")
+}
+
+// Subjects table - now parented by a semester
+model Subject {
+  id         String   @id @default(uuid()) @db.Uuid
+  semesterId String   @map("semester_id") @db.Uuid
+  name       String   @db.VarChar(255)
+  code       String?  @db.VarChar(50)
+  position   Int      @default(0)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamp()
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamp()
+
+  // Relations
+  semester  Semester   @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+  chapters  Chapter[]
+  resources Resource[]
+
+  // Leading column covers the semester_id foreign key lookups
+  @@index([semesterId, position], map: "idx_subjects_semester_position")
+  @@map("subjects")
+}
+
+// Chapters table - the level between a subject and its notes
+model Chapter {
+  id        String   @id @default(uuid()) @db.Uuid
+  subjectId String   @map("subject_id") @db.Uuid
+  title     String   @db.VarChar(500)
+  position  Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp()
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamp()
+
+  // Relations
+  subject   Subject    @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  notes     Note[]
+  resources Resource[]
+
+  // Leading column covers the subject_id foreign key lookups
+  @@index([subjectId, position], map: "idx_chapters_subject_position")
+  @@map("chapters")
+}
+
+// Notes table - now parented by a chapter, content is Markdown
+model Note {
+  id          String   @id @default(uuid()) @db.Uuid
+  chapterId   String   @map("chapter_id") @db.Uuid
+  title       String   @db.VarChar(500)
+  /// Markdown source (was sanitized HTML before the hierarchy redesign)
+  content     String   @db.Text
+  position    Int      @default(0)
+  isPublished Boolean  @default(false) @map("is_published")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamp()
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamp()
+
+  // Generated, stored tsvector over title + content. Maintained entirely by
+  // PostgreSQL (`GENERATED ALWAYS AS ... STORED`, created in raw SQL in the
+  // migration - Prisma models a generated column as a dbgenerated default) and
+  // backed by a GIN index. Prisma Client cannot read or write Unsupported
+  // columns, which is exactly what we want here: query it with $queryRaw.
+  searchVector Unsupported("tsvector")? @default(dbgenerated("(setweight(to_tsvector('english'::regconfig, (COALESCE(title, ''::character varying))::text), 'A'::\"char\") || setweight(to_tsvector('english'::regconfig, COALESCE(content, ''::text)), 'B'::\"char\"))")) @map("search_vector")
+
+  // Relations
+  chapter         Chapter           @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  bookmarks       Bookmark[]
+  readingProgress ReadingProgress[]
+
+  // Leading column covers the chapter_id foreign key lookups
+  @@index([chapterId, position], map: "idx_notes_chapter_position")
+  @@index([searchVector(ops: raw("tsvector_ops"))], map: "idx_notes_search_vector", type: Gin)
+  @@map("notes")
+}
+
+// Resources table - PDFs and other study material, hung off a subject and/or chapter
+model Resource {
+  id            String       @id @default(uuid()) @db.Uuid
+  subjectId     String?      @map("subject_id") @db.Uuid
+  chapterId     String?      @map("chapter_id") @db.Uuid
+  title         String       @db.VarChar(500)
+  description   String?      @db.Text
+  resourceType  ResourceType @map("resource_type")
+  storagePath   String       @map("storage_path") @db.VarChar(1024)
+  fileSizeBytes Int          @map("file_size_bytes")
+  mimeType      String       @map("mime_type") @db.VarChar(255)
+  isPublished   Boolean      @default(false) @map("is_published")
+  position      Int          @default(0)
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamp()
+  updatedAt     DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamp()
+
+  // Relations
+  subject Subject? @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  chapter Chapter? @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+
+  // Leading column covers the subject_id foreign key lookups
+  @@index([subjectId, isPublished], map: "idx_resources_subject_published")
+  @@index([chapterId], map: "idx_resources_chapter")
+  @@map("resources")
+}
+
+// ---------------------------------------------------------------------------
+// Commerce
+// ---------------------------------------------------------------------------
+
+// Subscription plans table - what a student can buy
+model SubscriptionPlan {
+  id              String          @id @default(uuid()) @db.Uuid
+  name            String          @db.VarChar(255)
+  code            String          @unique @db.VarChar(100)
+  billingInterval BillingInterval @map("billing_interval")
+  /// Minor units, e.g. paise for INR
+  priceAmount     Int             @map("price_amount")
+  currency        String          @default("INR") @db.VarChar(3)
+  durationDays    Int             @map("duration_days")
+  isActive        Boolean         @default(true) @map("is_active")
+  razorpayPlanId  String?         @unique @map("razorpay_plan_id") @db.VarChar(255)
+  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamp()
+  updatedAt       DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamp()
+
+  // Relations
+  subscriptions Subscription[]
+
+  @@map("subscription_plans")
+}
+
+// Subscriptions table - ACCOUNT level, no longer per subject
+model Subscription {
+  id                     String             @id @default(uuid()) @db.Uuid
+  studentId              String             @map("student_id") @db.Uuid
+  planId                 String             @map("plan_id") @db.Uuid
+  status                 SubscriptionStatus @default(PENDING)
+  currentPeriodStart     DateTime           @map("current_period_start") @db.Timestamp()
+  currentPeriodEnd       DateTime           @map("current_period_end") @db.Timestamp()
+  cancelledAt            DateTime?          @map("cancelled_at") @db.Timestamp()
+  razorpaySubscriptionId String?            @unique @map("razorpay_subscription_id") @db.VarChar(255)
+  createdAt              DateTime           @default(now()) @map("created_at") @db.Timestamp()
+  updatedAt              DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamp()
+
+  // Relations
+  // Restrict: a plan that has ever been sold cannot be deleted out from under
+  // its subscriptions - deactivate it with is_active instead.
+  student  Student          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  plan     SubscriptionPlan @relation(fields: [planId], references: [id], onDelete: Restrict)
+  payments Payment[]
+
+  // Leading column covers the student_id foreign key lookups and serves the
+  // "does this student have access right now" hot path
+  @@index([studentId, status, currentPeriodEnd], map: "idx_subscriptions_student_status_end")
+  @@index([planId], map: "idx_subscriptions_plan")
+  @@map("subscriptions")
+}
+
+// Payments table - Razorpay payment attempts and their outcomes
+model Payment {
+  id                String        @id @default(uuid()) @db.Uuid
+  studentId         String        @map("student_id") @db.Uuid
+  subscriptionId    String?       @map("subscription_id") @db.Uuid
+  /// Minor units, e.g. paise for INR
+  amount            Int
+  currency          String        @default("INR") @db.VarChar(3)
+  status            PaymentStatus @default(CREATED)
+  provider          String        @default("razorpay") @db.VarChar(50)
+  razorpayOrderId   String?       @map("razorpay_order_id") @db.VarChar(255)
+  razorpayPaymentId String?       @unique @map("razorpay_payment_id") @db.VarChar(255)
+  /// Raw provider webhook / API payload, kept for reconciliation
+  rawPayload        Json?         @map("raw_payload")
+  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamp()
+  updatedAt         DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamp()
+
+  // Relations
+  // SetNull: payment history outlives the subscription it paid for
+  student      Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+
+  @@index([studentId], map: "idx_payments_student")
+  @@index([subscriptionId], map: "idx_payments_subscription")
+  @@index([razorpayOrderId], map: "idx_payments_razorpay_order")
+  @@map("payments")
+}
+
+// ---------------------------------------------------------------------------
+// Student engagement
+// ---------------------------------------------------------------------------
+
+// Bookmarks table
+model Bookmark {
+  id        String   @id @default(uuid()) @db.Uuid
+  studentId String   @map("student_id") @db.Uuid
+  noteId    String   @map("note_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp()
+
+  // Relations
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  note    Note    @relation(fields: [noteId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, noteId], map: "uq_bookmarks_student_note")
+  @@index([studentId], map: "idx_bookmarks_student")
+  @@index([noteId], map: "idx_bookmarks_note")
+  @@map("bookmarks")
+}
+
+// Reading progress table
+model ReadingProgress {
+  id              String    @id @default(uuid()) @db.Uuid
+  studentId       String    @map("student_id") @db.Uuid
+  noteId          String    @map("note_id") @db.Uuid
+  /// 0-100, enforced by a CHECK constraint in the migration
+  progressPercent Int       @default(0) @map("progress_percent")
+  lastViewedAt    DateTime  @default(now()) @map("last_viewed_at") @db.Timestamp()
+  completedAt     DateTime? @map("completed_at") @db.Timestamp()
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamp()
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamp()
+
+  // Relations
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  note    Note    @relation(fields: [noteId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, noteId], map: "uq_reading_progress_student_note")
+  @@index([studentId, lastViewedAt], map: "idx_reading_progress_student_viewed")
+  @@index([noteId], map: "idx_reading_progress_note")
+  @@map("reading_progress")
+}
